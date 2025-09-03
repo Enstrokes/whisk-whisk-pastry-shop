@@ -20,7 +20,6 @@ export interface InvoiceItem {
 export enum PaymentStatus {
   Paid = 'Paid',
   Pending = 'Pending',
-  Overdue = 'Overdue',
 }
 
 export enum OrderType {
@@ -32,6 +31,7 @@ export enum OrderType {
 
 export interface Invoice {
   id?: string;
+  invoiceNumber: string;
   customerId: string;
   customerName: string;
   date: string; // YYYY-MM-DD

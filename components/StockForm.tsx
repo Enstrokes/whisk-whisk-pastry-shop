@@ -15,6 +15,20 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
     const [newCost, setNewCost] = useState<string>('');
     const isEditMode = 'id' in initialItem;
 
+    // Always include id in edit mode for onSave
+    const getFinalData = () => {
+        let finalData: StockItem | Omit<StockItem, 'id'> = { ...formData };
+        if (isEditMode && (initialItem as any).id) {
+            (finalData as any).id = (initialItem as any).id;
+        }
+        if (isEditMode && newCost !== '' && !isNaN(Number(newCost))) {
+            finalData.costPerUnit = Number(newCost);
+        }
+        // Debug log for id propagation
+        console.log('[StockForm] getFinalData:', finalData);
+        return finalData;
+    };
+
     useEffect(() => {
         setFormData(initialItem);
         setNewCost('');
@@ -32,13 +46,9 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
             alert("Please fill in all required fields.");
             return;
         }
-
-        let finalData: StockItem | Omit<StockItem, 'id'> = { ...formData };
-        if (isEditMode && newCost !== '' && !isNaN(Number(newCost))) {
-            finalData.costPerUnit = Number(newCost);
-        }
-
-        onSave(finalData);
+        const data = getFinalData();
+        console.log('[StockForm] handleSubmit, sending to onSave:', data);
+        onSave(data);
     }
 
     return (
@@ -76,7 +86,7 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className={labelStyle}>Current Cost Per Unit (₹)</label>
-                            <input type="number" value={formData.costPerUnit} className={`${inputStyle} bg-slate-200 cursor-not-allowed`} readOnly />
+                            <input type="number" value={Number(formData.costPerUnit).toFixed(2)} className={`${inputStyle} bg-slate-200 cursor-not-allowed`} readOnly />
                         </div>
                         <div>
                             <label className={labelStyle}>Low Stock Threshold</label>
@@ -92,7 +102,7 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label className={labelStyle}>Cost Per Unit (₹)</label>
-                        <input type="number" name="costPerUnit" value={formData.costPerUnit} onChange={handleChange} className={inputStyle} min="0" step="0.01"/>
+                        <input type="number" name="costPerUnit" value={Number(formData.costPerUnit).toFixed(2)} onChange={handleChange} className={inputStyle} min="0" step="0.01"/>
                     </div>
                     <div>
                         <label className={labelStyle}>Low Stock Threshold</label>

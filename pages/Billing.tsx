@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Invoice, PaymentStatus, OrderType, Customer, StockItem, StockCategory } from '../types';
@@ -113,9 +114,9 @@ const Billing: React.FC = () => {
         const headers = { 'Authorization': `Bearer ${token}` };
 
         const [invoicesRes, customersRes, stockRes] = await Promise.all([
-          fetch(`${API_URL}/api/invoices`, { headers }),
-          fetch(`${API_URL}/api/customers`, { headers }),
-          fetch(`${API_URL}/api/stock_items`, { headers }),
+          fetchWithAuth(`${API_URL}/api/invoices`, { headers }),
+          fetchWithAuth(`${API_URL}/api/customers`, { headers }),
+          fetchWithAuth(`${API_URL}/api/stock_items`, { headers }),
         ]);
 
         const invoicesData = await invoicesRes.json();
@@ -128,8 +129,14 @@ const Billing: React.FC = () => {
           items: inv.items ?? [],
         }));
 
+        // Ensure each customer has an id field
+        const normalizedCustomers: Customer[] = customersData.map((c: any) => ({
+          ...c,
+          id: c._id ?? c.id,
+        }));
+
         setInvoices(normalizedInvoices);
-        setCustomers(customersData);
+        setCustomers(normalizedCustomers);
         setAvailableProducts(stockData.filter(item => item.category === StockCategory.FinishedProduct));
       } catch (error) {
         console.error("Failed to fetch billing data:", error);
@@ -173,7 +180,7 @@ const Billing: React.FC = () => {
         amountPaid: Number(savedInvoiceData.amountPaid || 0),
       };
 
-      const response = await fetch(url, {
+  const response = await fetchWithAuth(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
@@ -207,7 +214,7 @@ const Billing: React.FC = () => {
   const handleDeleteInvoice = async (invoiceId: string) => {
     if (window.confirm('Are you sure you want to delete this invoice?')) {
       try {
-        const response = await fetch(`${API_URL}/api/invoices/${invoiceId}`, { 
+  const response = await fetchWithAuth(`${API_URL}/api/invoices/${invoiceId}`, { 
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` } 
         });
@@ -310,7 +317,7 @@ const Billing: React.FC = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0, transition: { delay: index * 0.05 } }}
                 >
-                  <td className="p-4 text-brand-accent font-mono">...{invoice.id?.slice(-6)}</td>
+                  <td className="p-4 text-brand-accent font-mono">{invoice.invoiceNumber || `...${invoice.id?.slice(-6)}`}</td>
                   <td className="p-4">{invoice.customerName}</td>
                   <td className="p-4 text-brand-text-secondary">{invoice.date}</td>
                   <td className="p-4 font-medium">₹{invoice.total.toFixed(2)}</td>

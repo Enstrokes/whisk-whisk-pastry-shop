@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import React, { useState, useMemo, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
@@ -45,11 +46,16 @@ const StockManagement: React.FC = () => {
     const fetchStock = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${API_URL}/api/stock_items`, {
+  const response = await fetchWithAuth(`${API_URL}/api/stock_items`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
-        setStock(data);
+        // Map _id to id for frontend consistency
+        const mapped = data.map((item: any) => ({
+          ...item,
+          id: item._id || item.id,
+        }));
+        setStock(mapped);
       } catch (error) {
         console.error("Failed to fetch stock items:", error);
       } finally {
@@ -96,38 +102,67 @@ const StockManagement: React.FC = () => {
   };
   
   const handleDeleteItem = async (itemId: string) => {
+    console.log('[StockManagement] handleDeleteItem called with id:', itemId);
+    if (!itemId) {
+      alert('Cannot delete: id is undefined!');
+      return;
+    }
     if (window.confirm('Are you sure you want to delete this stock item?')) {
       try {
-        await fetch(`${API_URL}/api/stock_items/${itemId}`, { 
+  const response = await fetchWithAuth(`${API_URL}/api/stock_items/${itemId}`, { 
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
+        if (!response.ok) throw new Error('Failed to delete stock item');
         setStock(prev => prev.filter(item => item.id !== itemId));
+        alert('Stock item deleted successfully.');
       } catch(error) {
         console.error("Failed to delete stock item:", error);
+        alert('Failed to delete stock item.');
       }
     }
   };
 
-  const handleSaveStockItem = async (itemData: StockItem | Omit<StockItem, 'id'>) => {
-    const isUpdate = 'id' in itemData && itemData.id;
-    const method = isUpdate ? 'PUT' : 'POST';
-    const url = isUpdate ? `${API_URL}/api/stock_items/${itemData.id}` : `${API_URL}/api/stock_items`;
-    
+  // Helper to fetch and map stock items
+  const fetchAndSetStock = async () => {
     try {
-      const response = await fetch(url, {
+      setLoading(true);
+  const response = await fetchWithAuth(`${API_URL}/api/stock_items`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      const mapped = data.map((item: any) => ({ ...item, id: item._id || item.id }));
+      setStock(mapped);
+    } catch (error) {
+      console.error("Failed to fetch stock items:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveStockItem = async (itemData: StockItem | Omit<StockItem, 'id'>) => {
+    console.log('[StockManagement] handleSaveStockItem received:', itemData);
+    const isUpdate = 'id' in itemData && itemData.id;
+    let url = `${API_URL}/api/stock_items`;
+    let method: 'POST' | 'PUT' = 'POST';
+    let body = { ...itemData };
+    if (isUpdate) {
+      url = `${API_URL}/api/stock_items/${itemData.id}`;
+      method = 'PUT';
+      // Remove id from body for update (MongoDB _id is immutable)
+      const { id, ...rest } = itemData as StockItem;
+      body = rest;
+    }
+    console.log('[StockManagement] handleSaveStockItem, method:', method, 'url:', url, 'body:', body);
+    try {
+  const response = await fetchWithAuth(url, {
         method,
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(itemData)
+        body: JSON.stringify(body)
       });
       if(!response.ok) throw new Error("Failed to save stock item");
-      const savedItem = await response.json();
-
-      if (isUpdate) {
-        setStock(prev => prev.map(item => item.id === savedItem.id ? savedItem : item));
-      } else {
-        setStock(prev => [savedItem, ...prev]);
-      }
+      // Always re-fetch the latest stock list after save
+      await fetchAndSetStock();
     } catch(error) {
       console.error("Error saving stock item:", error);
     } finally {
@@ -138,14 +173,14 @@ const StockManagement: React.FC = () => {
 
   const handleAdjustStock = async (itemId: string, purchaseData: { quantity_added: number, cost_per_unit_of_purchase: number }) => {
     try {
-      const response = await fetch(`${API_URL}/api/stock_items/${itemId}/purchases`, {
+  const response = await fetchWithAuth(`${API_URL}/api/stock_items/${itemId}/purchases`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(purchaseData)
       });
       if(!response.ok) throw new Error("Failed to adjust stock");
-      const updatedItem = await response.json();
-      setStock(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+      // Always re-fetch the latest stock list after purchase
+      await fetchAndSetStock();
     } catch(error) {
         console.error("Error adjusting stock:", error);
     } finally {
@@ -202,7 +237,7 @@ const StockManagement: React.FC = () => {
                       >
                         <td className="p-4 font-medium">{item.name}</td>
                         <td className="p-4 text-brand-text-secondary">{item.category}</td>
-                        <td className="p-4">{item.quantity} {item.unit}</td>
+                        <td className="p-4">{Number(item.quantity).toFixed(2)} {item.unit}</td>
                         <td className="p-4">
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusColors[status].bg} ${statusColors[status].text}`}>
                             {status}
@@ -211,7 +246,14 @@ const StockManagement: React.FC = () => {
                         <td className="p-4 text-right">
                           <button onClick={() => handleOpenAdjustModal(item)} className="p-2 text-brand-text-secondary hover:text-brand-primary" aria-label="Adjust Quantity"><AdjustIcon className="w-5 h-5" /></button>
                           <button onClick={() => handleOpenEditModal(item)} className="p-2 text-brand-text-secondary hover:text-yellow-400" aria-label="Edit"><EditIcon className="w-5 h-5" /></button>
-                          <button onClick={() => handleDeleteItem(item.id!)} className="p-2 text-brand-text-secondary hover:text-red-500" aria-label="Delete"><DeleteIcon className="w-5 h-5" /></button>
+                          <button onClick={() => {
+                            console.log('[StockManagement] Delete button clicked, item:', item);
+                            if (!item.id) {
+                              alert('Cannot delete: item.id is undefined!');
+                              return;
+                            }
+                            handleDeleteItem(item.id);
+                          }} className="p-2 text-brand-text-secondary hover:text-red-500" aria-label="Delete"><DeleteIcon className="w-5 h-5" /></button>
                         </td>
                       </motion.tr>
                     );
@@ -243,7 +285,14 @@ const StockManagement: React.FC = () => {
                             <div>
                                <button onClick={() => handleOpenAdjustModal(item)} className="p-2 text-brand-text-secondary hover:text-brand-primary" aria-label="Adjust Quantity"><AdjustIcon className="w-5 h-5" /></button>
                               <button onClick={() => handleOpenEditModal(item)} className="p-2 text-brand-text-secondary hover:text-yellow-400" aria-label="Edit"><EditIcon className="w-5 h-5" /></button>
-                              <button onClick={() => handleDeleteItem(item.id!)} className="p-2 text-brand-text-secondary hover:text-red-500" aria-label="Delete"><DeleteIcon className="w-5 h-5" /></button>
+                              <button onClick={() => {
+                                console.log('[StockManagement] Delete button clicked, item:', item);
+                                if (!item.id) {
+                                  alert('Cannot delete: item.id is undefined!');
+                                  return;
+                                }
+                                handleDeleteItem(item.id);
+                              }} className="p-2 text-brand-text-secondary hover:text-red-500" aria-label="Delete"><DeleteIcon className="w-5 h-5" /></button>
                             </div>
                         </div>
                     </motion.div>

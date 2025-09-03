@@ -1,3 +1,4 @@
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import React, { useMemo, useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { motion } from 'framer-motion';
@@ -24,10 +25,10 @@ const Dashboard: React.FC = () => {
         const headers = { 'Authorization': `Bearer ${token}` };
         
         const [invoicesRes, stockRes, customersRes, recipesRes] = await Promise.all([
-          fetch(`${API_URL}/api/invoices`, { headers }),
-          fetch(`${API_URL}/api/stock_items`, { headers }),
-          fetch(`${API_URL}/api/customers`, { headers }),
-          fetch(`${API_URL}/api/recipes`, { headers }),
+          fetchWithAuth(`${API_URL}/api/invoices`, { headers }),
+          fetchWithAuth(`${API_URL}/api/stock_items`, { headers }),
+          fetchWithAuth(`${API_URL}/api/customers`, { headers }),
+          fetchWithAuth(`${API_URL}/api/recipes`, { headers }),
         ]);
 
         setInvoices(await invoicesRes.json());

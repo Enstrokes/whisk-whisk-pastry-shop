@@ -1,3 +1,6 @@
+## Record a stock purchase (add quantity and recalculate cost per unit)
+
+# Place this endpoint after all models and app definition
 import os
 from datetime import datetime, timedelta
 from typing import List, Optional, Annotated
@@ -82,7 +85,7 @@ class TokenData(BaseModel):
 
 class Customer(BaseDBModel):
     name: str
-    email: EmailStr
+    email: Optional[str] = None
     phone: str
     address: str
     birthday: str
@@ -125,6 +128,7 @@ class InvoiceItem(BaseModel):
 
 
 class Invoice(BaseDBModel):
+    invoiceNumber: str
     customerId: str
     customerName: str
     date: str
@@ -302,36 +306,137 @@ async def login_for_access_token(
 
 # --- SERIALIZATION HELPERS ---
 def serialize_doc(doc):
-    """Convert MongoDB document _id to string"""
+    """Convert MongoDB document _id to string and ensure all customer fields are present as strings"""
     if not doc:
         return doc
     if "_id" in doc and isinstance(doc["_id"], ObjectId):
         doc["_id"] = str(doc["_id"])
+    # Ensure all customer fields are present as strings for frontend editing
+    if "name" in doc:
+        doc["name"] = doc.get("name", "") or ""
+        doc["email"] = doc.get("email", "") or ""
+        doc["phone"] = doc.get("phone", "") or ""
+        doc["address"] = doc.get("address", "") or ""
+        doc["birthday"] = doc.get("birthday", "") or ""
+        doc["anniversary"] = doc.get("anniversary", "") or ""
     return doc
 
 
 def serialize_list(docs):
     """Convert a list of MongoDB documents"""
     return [serialize_doc(doc) for doc in docs]
+
 # Customers
 @app.get("/api/customers", response_model=List[Customer])
 async def get_customers(current_user: Annotated[User, Depends(get_current_user)]):
     customers = await db.customers.find().to_list(100)
     return serialize_list(customers)
 
+# Get a single customer by ID
+@app.get("/api/customers/{customer_id}", response_model=Customer)
+async def get_customer(customer_id: str, current_user: Annotated[User, Depends(get_current_user)]):
+    customer = await db.customers.find_one({"_id": ObjectId(customer_id)})
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return serialize_doc(customer)
+
 
 # Stock Items
+
+# Create Stock Item
+from fastapi import Body
+
+@app.post("/api/stock_items", response_model=StockItem)
+async def create_stock_item(
+    item: StockItem = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    item_dict = item.dict(exclude_unset=True)
+    item_dict.pop("id", None)  # Remove id if present
+    result = await db.stock_items.insert_one(item_dict)
+    created = await db.stock_items.find_one({"_id": result.inserted_id})
+    return serialize_doc(created)
+
+# Update Stock Item
+@app.delete("/api/stock_items/{item_id}")
+async def delete_stock_item(
+    item_id: str,
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    result = await db.stock_items.delete_one({"_id": ObjectId(item_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Stock item not found")
+    return {"detail": "Stock item deleted"}
+from fastapi import Path
+
+@app.put("/api/stock_items/{item_id}", response_model=StockItem)
+async def update_stock_item(
+    item_id: str = Path(...),
+    item: StockItem = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    item_dict = item.dict(exclude_unset=True)
+    item_dict.pop("id", None)
+    result = await db.stock_items.update_one({"_id": ObjectId(item_id)}, {"$set": item_dict})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Stock item not found")
+    updated = await db.stock_items.find_one({"_id": ObjectId(item_id)})
+    return serialize_doc(updated)
+
 @app.get("/api/stock_items", response_model=List[StockItem])
 async def get_stock_items(current_user: Annotated[User, Depends(get_current_user)]):
     stock_items = await db.stock_items.find().to_list(100)
     return serialize_list(stock_items)
 
 
-# Recipes
+
+# Recipes CRUD
 @app.get("/api/recipes", response_model=List[Recipe])
 async def get_recipes(current_user: Annotated[User, Depends(get_current_user)]):
     recipes = await db.recipes.find().to_list(100)
     return serialize_list(recipes)
+
+@app.post("/api/recipes", response_model=Recipe)
+async def create_recipe(
+    recipe: Recipe = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    recipe_dict = recipe.dict(exclude_unset=True)
+    recipe_dict.pop("id", None)
+    result = await db.recipes.insert_one(recipe_dict)
+    created = await db.recipes.find_one({"_id": result.inserted_id})
+    return serialize_doc(created)
+
+@app.put("/api/recipes/{recipe_id}", response_model=Recipe)
+async def update_recipe(
+    recipe_id: str,
+    recipe: Recipe = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    recipe_dict = recipe.dict(exclude_unset=True)
+    recipe_dict.pop("id", None)
+    result = await db.recipes.update_one({"_id": ObjectId(recipe_id)}, {"$set": recipe_dict})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    updated = await db.recipes.find_one({"_id": ObjectId(recipe_id)})
+    return serialize_doc(updated)
+
+@app.delete("/api/recipes/{recipe_id}")
+async def delete_recipe(
+    recipe_id: str,
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    if not recipe_id or recipe_id == "undefined":
+        raise HTTPException(status_code=400, detail="Invalid recipe id")
+    try:
+        obj_id = ObjectId(recipe_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid recipe id format")
+    result = await db.recipes.delete_one({"_id": obj_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    return {"detail": "Recipe deleted"}
+
 
 
 # Invoices
@@ -339,3 +444,172 @@ async def get_recipes(current_user: Annotated[User, Depends(get_current_user)]):
 async def get_invoices(current_user: Annotated[User, Depends(get_current_user)]):
     invoices = await db.invoices.find().to_list(100)
     return serialize_list(invoices)
+
+
+# --- INVOICE CREATION ENDPOINT ---
+from fastapi import Body
+
+class InvoiceCreate(BaseModel):
+    customerId: Optional[str] = None
+    customerName: Optional[str] = None
+    customerEmail: Optional[str] = None  # optional, now allows empty or invalid emails
+    customerPhone: Optional[str] = None
+    customerAddress: Optional[str] = None  # optional
+    customerBirthday: Optional[str] = None  # optional
+    customerAnniversary: Optional[str] = None  # optional
+    date: str
+    items: List[InvoiceItem]
+    subtotal: float
+    discount: float
+    gst: float
+    total: float
+    paymentStatus: str
+    orderType: str
+    notes: Optional[str] = None
+    amountPaid: float
+
+@app.post("/api/invoices", response_model=Invoice)
+async def create_invoice(
+    invoice: InvoiceCreate = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    # Handle customer: use existing or create new
+    if invoice.customerId:
+        customer = await db.customers.find_one({"_id": ObjectId(invoice.customerId)})
+        if not customer:
+            raise HTTPException(status_code=400, detail="Customer not found")
+        customerId = str(customer["_id"])
+        customerName = customer["name"]
+    else:
+        # Create new customer
+        # Try both customerPhone and phone for compatibility
+        phone = invoice.customerPhone or getattr(invoice, 'phone', None)
+        if not (invoice.customerName and phone):
+            raise HTTPException(status_code=400, detail="Missing new customer details (name and phone required)")
+        new_customer = {
+            "name": invoice.customerName,
+            "email": invoice.customerEmail or "",
+            "phone": phone,
+            "address": invoice.customerAddress or "",
+            "birthday": invoice.customerBirthday or "",
+            "anniversary": invoice.customerAnniversary or "",
+        }
+        result = await db.customers.insert_one(new_customer)
+        customerId = str(result.inserted_id)
+        customerName = invoice.customerName
+
+    # Generate next invoice number (sequential, e.g., WHISK-01)
+    last_invoice = await db.invoices.find().sort("_id", -1).limit(1).to_list(1)
+    if last_invoice and "invoiceNumber" in last_invoice[0]:
+        try:
+            last_num = int(last_invoice[0]["invoiceNumber"].split("-")[-1])
+        except Exception:
+            last_num = 0
+    else:
+        last_num = 0
+    next_num = last_num + 1
+    invoice_number = f"WHISK-{next_num:02d}"
+    invoice_doc = {
+        "invoiceNumber": invoice_number,
+        "customerId": customerId,
+        "customerName": customerName,
+        "date": invoice.date,
+        "items": [item.dict() for item in invoice.items],
+        "subtotal": invoice.subtotal,
+        "discount": invoice.discount,
+        "gst": invoice.gst,
+        "total": invoice.total,
+        "paymentStatus": invoice.paymentStatus,
+        "orderType": invoice.orderType,
+        "notes": invoice.notes,
+        "amountPaid": invoice.amountPaid,
+    }
+    result = await db.invoices.insert_one(invoice_doc)
+    saved_invoice = await db.invoices.find_one({"_id": result.inserted_id})
+    return serialize_doc(saved_invoice)
+
+
+# --- INVOICE UPDATE ENDPOINT ---
+from fastapi import Path
+
+@app.put("/api/invoices/{invoice_id}", response_model=Invoice)
+async def update_invoice(
+    invoice_id: str = Path(...),
+    invoice: InvoiceCreate = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    # Handle customer: use existing or create new
+    if invoice.customerId:
+        customer = await db.customers.find_one({"_id": ObjectId(invoice.customerId)})
+        if not customer:
+            raise HTTPException(status_code=400, detail="Customer not found")
+        customerId = str(customer["_id"])
+        customerName = customer["name"]
+    else:
+        phone = invoice.customerPhone or getattr(invoice, 'phone', None)
+        if not (invoice.customerName and phone):
+            raise HTTPException(status_code=400, detail="Missing new customer details (name and phone required)")
+        new_customer = {
+            "name": invoice.customerName,
+            "email": invoice.customerEmail or "",
+            "phone": phone,
+            "address": invoice.customerAddress or "",
+            "birthday": invoice.customerBirthday or "",
+            "anniversary": invoice.customerAnniversary or "",
+        }
+        result = await db.customers.insert_one(new_customer)
+        customerId = str(result.inserted_id)
+        customerName = invoice.customerName
+
+    # Preserve existing invoiceNumber
+    existing = await db.invoices.find_one({"_id": ObjectId(invoice_id)})
+    invoice_number = existing.get("invoiceNumber", "") if existing else ""
+    invoice_doc = {
+        "invoiceNumber": invoice_number,
+        "customerId": customerId,
+        "customerName": customerName,
+        "date": invoice.date,
+        "items": [item.dict() for item in invoice.items],
+        "subtotal": invoice.subtotal,
+        "discount": invoice.discount,
+        "gst": invoice.gst,
+        "total": invoice.total,
+        "paymentStatus": invoice.paymentStatus,
+        "orderType": invoice.orderType,
+        "notes": invoice.notes,
+        "amountPaid": invoice.amountPaid,
+    }
+    result = await db.invoices.update_one({"_id": ObjectId(invoice_id)}, {"$set": invoice_doc})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    updated_invoice = await db.invoices.find_one({"_id": ObjectId(invoice_id)})
+    return serialize_doc(updated_invoice)
+
+# Record a stock purchase (add quantity and recalculate cost per unit)
+@app.post("/api/stock_items/{item_id}/purchases", response_model=StockItem)
+async def record_stock_purchase(
+    item_id: str,
+    purchase: StockPurchase = Body(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    item = await db.stock_items.find_one({"_id": ObjectId(item_id)})
+    if not item:
+        raise HTTPException(status_code=404, detail="Stock item not found")
+    # Calculate new quantity
+    old_qty = item.get("quantity", 0)
+    old_cost = item.get("costPerUnit", 0)
+    add_qty = purchase.quantity_added
+    new_cost = purchase.cost_per_unit_of_purchase
+    # Weighted average cost calculation
+    if add_qty > 0:
+        total_qty = old_qty + add_qty
+        avg_cost = ((old_qty * old_cost) + (add_qty * new_cost)) / total_qty if total_qty > 0 else new_cost
+    else:
+        total_qty = old_qty
+        avg_cost = old_cost
+    await db.stock_items.update_one(
+        {"_id": ObjectId(item_id)},
+        {"$set": {"quantity": total_qty, "costPerUnit": avg_cost}}
+    )
+    updated = await db.stock_items.find_one({"_id": ObjectId(item_id)})
+    return serialize_doc(updated)

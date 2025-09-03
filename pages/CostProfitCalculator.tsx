@@ -1,3 +1,13 @@
+// Helper fetch wrapper to handle 401 and redirect to login
+const fetchWithAuth = async (url: string, options: any = {}) => {
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
+  return res;
+};
 import React, { useState, useMemo, useEffect } from 'react';
 import { Recipe, StockItem, StockCategory } from '../types';
 import Modal from '../components/Modal';
@@ -29,14 +39,19 @@ const CostProfitCalculator: React.FC = () => {
         setLoading(true);
         const headers = { 'Authorization': `Bearer ${token}` };
         const [recipesRes, stockRes] = await Promise.all([
-          fetch(`${API_URL}/api/recipes`, { headers }),
-          fetch(`${API_URL}/api/stock_items`, { headers }),
+          fetchWithAuth(`${API_URL}/api/recipes`, { headers }),
+          fetchWithAuth(`${API_URL}/api/stock_items`, { headers }),
         ]);
         const recipesData = await recipesRes.json();
         const stockData = await stockRes.json();
         
-        setRecipes(recipesData);
-        setStockItems(stockData.filter((item: StockItem) => item.category === StockCategory.Ingredient));
+  // Always map _id to id for frontend consistency
+  setRecipes(recipesData.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
+        setStockItems(
+          stockData
+            .filter((item: StockItem) => item.category === StockCategory.Ingredient)
+            .map((item: any) => ({ ...item, id: item._id ? String(item._id) : item.id }))
+        );
         
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -82,23 +97,28 @@ const CostProfitCalculator: React.FC = () => {
   }, [selectedRecipe, stockItems]);
   
   const handleOpenCreateModal = () => {
-    setEditingRecipe(newRecipeTemplate);
+    setEditingRecipe({ ...newRecipeTemplate }); // no id for new
     setIsModalOpen(true);
   };
   
   const handleOpenEditModal = (recipe: Recipe) => {
-    setEditingRecipe(recipe);
+    // Always pass id for edit
+  setEditingRecipe({ ...recipe, id: recipe.id ?? (recipe as any)._id });
     setIsModalOpen(true);
   };
   
   const handleDeleteRecipe = async (recipeId: string) => {
     if (window.confirm('Are you sure you want to delete this recipe?')) {
       try {
-        await fetch(`${API_URL}/api/recipes/${recipeId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        setRecipes(prev => prev.filter(r => r.id !== recipeId));
+    await fetchWithAuth(`${API_URL}/api/recipes/${recipeId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+        // Reload recipes from backend after delete
+        const headers = { 'Authorization': `Bearer ${token}` };
+  const recipesRes = await fetchWithAuth(`${API_URL}/api/recipes`, { headers });
+        const recipesData = await recipesRes.json();
+        setRecipes(recipesData);
         // The useEffect will handle re-selection
       } catch (error) {
         console.error("Error deleting recipe:", error);
@@ -107,31 +127,35 @@ const CostProfitCalculator: React.FC = () => {
   };
 
   const handleSaveRecipe = async (recipeData: Recipe | Omit<Recipe, 'id'>) => {
-    const isUpdate = 'id' in recipeData && recipeData.id;
-    const method = isUpdate ? 'PUT' : 'POST';
-    const url = isUpdate ? `${API_URL}/api/recipes/${recipeData.id}` : `${API_URL}/api/recipes`;
+  const isUpdate = 'id' in recipeData && recipeData.id;
+  const method = isUpdate ? 'PUT' : 'POST';
+  const url = isUpdate ? `${API_URL}/api/recipes/${recipeData.id}` : `${API_URL}/api/recipes`;
 
-    try {
-        const response = await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(recipeData)
-        });
-        if (!response.ok) throw new Error('Failed to save recipe');
-        const savedRecipe = await response.json();
+  // Remove id from body for PUT (backend expects no id in body)
+  const bodyData = { ...recipeData };
+  if (isUpdate) delete (bodyData as any).id;
 
-        if (isUpdate) {
-            setRecipes(prev => prev.map(r => r.id === savedRecipe.id ? savedRecipe : r));
-        } else {
-            setRecipes(prev => [savedRecipe, ...prev]);
-        }
-        setSelectedRecipe(savedRecipe);
-    } catch (error) {
-        console.error("Error saving recipe:", error);
-    } finally {
-        setIsModalOpen(false);
-        setEditingRecipe(null);
-    }
+  try {
+  const response = await fetchWithAuth(url, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify(bodyData)
+  });
+    if (!response.ok) throw new Error('Failed to save recipe');
+    const savedRecipe = await response.json();
+
+    // Reload recipes from backend after save, mapping _id to id
+    const headers = { 'Authorization': `Bearer ${token}` };
+  const recipesRes = await fetchWithAuth(`${API_URL}/api/recipes`, { headers });
+    const recipesData = await recipesRes.json();
+    setRecipes(recipesData.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
+    setSelectedRecipe({ ...savedRecipe, id: savedRecipe._id ? String(savedRecipe._id) : savedRecipe.id });
+  } catch (error) {
+    console.error("Error saving recipe:", error);
+  } finally {
+    setIsModalOpen(false);
+    setEditingRecipe(null);
+  }
   };
   
   if (loading) return <div className="text-center p-10">Loading Recipes...</div>;
@@ -169,7 +193,11 @@ const CostProfitCalculator: React.FC = () => {
                 </button>
                 <div className={`pr-3 flex gap-2 items-center transition-opacity duration-200 ${selectedRecipe?.id === recipe.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                     <button onClick={() => handleOpenEditModal(recipe)} className="p-1 rounded-full hover:bg-white/20"><EditIcon className="w-4 h-4"/></button>
-                    <button onClick={() => handleDeleteRecipe(recipe.id!)} className="p-1 rounded-full hover:bg-white/20"><DeleteIcon className="w-4 h-4"/></button>
+          <button onClick={() => {
+            const id = recipe.id ?? recipe._id;
+            if (id) handleDeleteRecipe(id);
+            else alert('Recipe ID is missing!');
+          }} className="p-1 rounded-full hover:bg-white/20"><DeleteIcon className="w-4 h-4"/></button>
                 </div>
               </li>
             ))}

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Recipe, StockItem, RecipeIngredient } from '../types';
 import { XCircleIcon, PlusIcon } from './Icons';
+import Modal from './Modal';
 
 interface RecipeFormProps {
     initialRecipe: Recipe | Omit<Recipe, 'id'>;
@@ -15,19 +16,37 @@ const labelStyle = "text-sm text-brand-text-secondary mb-1 block";
 
 const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, stockItems, onSave, onCancel }) => {
     const [formData, setFormData] = useState(initialRecipe);
+    const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+    const [newStock, setNewStock] = useState({
+        name: '',
+        category: 'Ingredient',
+        quantity: 0,
+        unit: '',
+        costPerUnit: 0,
+        lowStockThreshold: 1,
+    });
 
     useEffect(() => {
         setFormData(initialRecipe);
     }, [initialRecipe]);
 
+    // Debug: log stockItems and formData.ingredients on every render
+    useEffect(() => {
+        console.log('[RecipeForm] stockItems:', stockItems);
+        console.log('[RecipeForm] formData.ingredients:', formData.ingredients);
+    });
+
     const manufacturingCost = useMemo(() => {
-        return formData.ingredients.reduce((total, ingredient) => {
-            const stockItem = stockItems.find(item => item.id === ingredient.stockItemId);
+        const cost = formData.ingredients.reduce((total, ingredient) => {
+            const stockItem = stockItems.find(item => String(item.id ?? item._id) === String(ingredient.stockItemId));
             if (stockItem) {
-                return total + stockItem.costPerUnit * ingredient.quantity;
+                const costPerUnit = Number(stockItem.costPerUnit ?? stockItem.unitCost ?? 0);
+                const qty = Number(ingredient.quantity);
+                return total + (isNaN(costPerUnit) ? 0 : costPerUnit) * (isNaN(qty) ? 0 : qty);
             }
             return total;
         }, 0);
+        return Math.round(cost * 100) / 100;
     }, [formData.ingredients, stockItems]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,9 +55,12 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, stockItems, onSa
     }
 
     const handleIngredientChange = (index: number, field: keyof RecipeIngredient, value: string | number) => {
-        const newIngredients = [...formData.ingredients];
-        (newIngredients[index] as any)[field] = value;
-        setFormData(prev => ({ ...prev, ingredients: newIngredients }));
+        setFormData(prev => {
+            const newIngredients = prev.ingredients.map((ing, i) =>
+                i === index ? { ...ing, [field]: value } : ing
+            );
+            return { ...prev, ingredients: newIngredients };
+        });
     }
 
     const addIngredient = () => {
@@ -89,8 +111,10 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, stockItems, onSa
             <div>
                 <h3 className="font-semibold mb-2">Ingredients</h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                    {formData.ingredients.map((ing, index) => (
-                        <div key={index} className="grid grid-cols-1 gap-2 items-center md:grid-cols-[1fr_100px_auto]">
+                    {formData.ingredients.map((ing, index) => {
+                        const stock = stockItems.find(item => item.id === ing.stockItemId);
+                        return (
+                        <div key={index} className="grid grid-cols-1 gap-2 items-center md:grid-cols-[1fr_100px_60px_auto]">
                             <select 
                                 value={ing.stockItemId} 
                                 onChange={(e) => handleIngredientChange(index, 'stockItemId', e.target.value)} 
@@ -98,10 +122,10 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, stockItems, onSa
                             >
                                 <option value="">Select Ingredient</option>
                                 {stockItems.map(item => (
-                                    <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>
+                                    <option key={item.id || item._id} value={item.id || item._id}>{item.name} ({item.unit})</option>
                                 ))}
                             </select>
-                             <input 
+                            <input 
                                 type="number" 
                                 value={ing.quantity} 
                                 onChange={(e) => handleIngredientChange(index, 'quantity', Number(e.target.value))}
@@ -109,11 +133,13 @@ const RecipeForm: React.FC<RecipeFormProps> = ({ initialRecipe, stockItems, onSa
                                 min="0.001"
                                 step="any"
                              />
+                            <span className="text-xs text-brand-text-secondary pl-1">{stock ? stock.unit : ''}</span>
                             <button type="button" onClick={() => removeIngredient(index)} className="text-red-400 hover:text-red-600 justify-self-end md:justify-self-center">
                                 <XCircleIcon className="w-6 h-6"/>
                             </button>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
                 <button type="button" onClick={addIngredient} className="mt-2 text-brand-primary font-semibold hover:text-brand-secondary text-sm flex items-center gap-1">
                     <PlusIcon className="w-4 h-4" /> Add Ingredient
