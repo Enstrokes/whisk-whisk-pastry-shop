@@ -36,7 +36,7 @@ const Login: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="bg-brand-surface border border-brand-border rounded-xl shadow-2xl p-8">
           <div className="flex flex-col items-center mb-6">
-            <LogoIcon className="w-16 h-16 text-brand-primary mb-2" />
+            <img src="/src/logo-bg.png" alt="Logo" className="h-16 w-auto mb-2 object-contain" />
             <h1 className="text-2xl font-bold text-brand-text">Welcome to Whisk & Whisk</h1>
             <p className="text-brand-text-secondary mt-1">Sign in to continue</p>
           </div>

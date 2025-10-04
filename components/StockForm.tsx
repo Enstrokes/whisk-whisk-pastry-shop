@@ -37,7 +37,17 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         const isNumeric = ['quantity', 'costPerUnit', 'lowStockThreshold', 'sellingPrice'].includes(name);
-        setFormData(prev => ({ ...prev, [name]: isNumeric ? Number(value) : value }));
+        if (isNumeric) {
+            // Handle numeric fields - allow empty values
+            if (value === '') {
+                setFormData(prev => ({ ...prev, [name]: '' }));
+            } else {
+                const numericValue = Number(value);
+                setFormData(prev => ({ ...prev, [name]: isNaN(numericValue) ? '' : numericValue }));
+            }
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     }
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -66,7 +76,16 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label className={labelStyle}>Quantity</label>
-                    <input type="number" name="quantity" value={formData.quantity} onChange={handleChange} className={inputStyle} min="0" readOnly={isEditMode} />
+                    <input 
+                        type="number" 
+                        name="quantity" 
+                        value={formData.quantity === 0 ? '' : formData.quantity} 
+                        onChange={handleChange} 
+                        className={inputStyle} 
+                        min="0" 
+                        placeholder="0"
+                        readOnly={isEditMode} 
+                    />
                 </div>
                  <div>
                     <label className={labelStyle}>Unit</label>
@@ -90,7 +109,15 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
                         </div>
                         <div>
                             <label className={labelStyle}>Low Stock Threshold</label>
-                            <input type="number" name="lowStockThreshold" value={formData.lowStockThreshold} onChange={handleChange} className={inputStyle} min="0"/>
+                            <input 
+                                type="number" 
+                                name="lowStockThreshold" 
+                                value={formData.lowStockThreshold === 0 ? '' : formData.lowStockThreshold} 
+                                onChange={handleChange} 
+                                className={inputStyle} 
+                                min="0"
+                                placeholder="0"
+                            />
                         </div>
                     </div>
                     <div>
@@ -102,11 +129,28 @@ const StockForm: React.FC<StockFormProps> = ({ initialItem, onSave, onCancel }) 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label className={labelStyle}>Cost Per Unit (₹)</label>
-                        <input type="number" name="costPerUnit" value={Number(formData.costPerUnit).toFixed(2)} onChange={handleChange} className={inputStyle} min="0" step="0.01"/>
+                        <input 
+                            type="number" 
+                            name="costPerUnit" 
+                            value={formData.costPerUnit === 0 ? '' : Number(formData.costPerUnit).toFixed(2)} 
+                            onChange={handleChange} 
+                            className={inputStyle} 
+                            min="0" 
+                            step="0.01"
+                            placeholder="0.00"
+                        />
                     </div>
                     <div>
                         <label className={labelStyle}>Low Stock Threshold</label>
-                        <input type="number" name="lowStockThreshold" value={formData.lowStockThreshold} onChange={handleChange} className={inputStyle} min="0"/>
+                        <input 
+                            type="number" 
+                            name="lowStockThreshold" 
+                            value={formData.lowStockThreshold === 0 ? '' : formData.lowStockThreshold} 
+                            onChange={handleChange} 
+                            className={inputStyle} 
+                            min="0"
+                            placeholder="0"
+                        />
                     </div>
                 </div>
             )}

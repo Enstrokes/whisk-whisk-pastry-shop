@@ -10,18 +10,20 @@ interface AdjustStockFormProps {
 const inputStyle = "w-full bg-slate-100 border-transparent rounded-lg p-2 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-primary transition-colors";
 
 const AdjustStockForm: React.FC<AdjustStockFormProps> = ({ item, onSave, onCancel }) => {
-    const [quantityAdded, setQuantityAdded] = useState(0);
-    const [costPerUnit, setCostPerUnit] = useState(item.costPerUnit);
+    const [quantityAdded, setQuantityAdded] = useState('');
+    const [costPerUnit, setCostPerUnit] = useState('');
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (quantityAdded <= 0 || costPerUnit < 0) {
+        const numQuantityAdded = Number(quantityAdded);
+        const numCostPerUnit = Number(costPerUnit);
+        if (numQuantityAdded <= 0 || numCostPerUnit < 0) {
             alert("Please enter a valid quantity and cost.");
             return;
         }
         onSave(item.id!, {
-            quantity_added: quantityAdded,
-            cost_per_unit_of_purchase: costPerUnit
+            quantity_added: numQuantityAdded,
+            cost_per_unit_of_purchase: numCostPerUnit
         });
     }
 
@@ -38,10 +40,11 @@ const AdjustStockForm: React.FC<AdjustStockFormProps> = ({ item, onSave, onCance
                     <input
                         type="number"
                         value={quantityAdded}
-                        onChange={e => setQuantityAdded(Number(e.target.value))}
+                        onChange={e => setQuantityAdded(e.target.value)}
                         className={inputStyle}
                         min="0.01"
                         step="any"
+                        placeholder="0"
                         required
                     />
                 </div>
@@ -50,10 +53,11 @@ const AdjustStockForm: React.FC<AdjustStockFormProps> = ({ item, onSave, onCance
                     <input
                         type="number"
                         value={costPerUnit}
-                        onChange={e => setCostPerUnit(Number(e.target.value))}
+                        onChange={e => setCostPerUnit(e.target.value)}
                         className={inputStyle}
                         min="0"
                         step="any"
+                        placeholder="0.00"
                         required
                     />
                 </div>
@@ -61,7 +65,7 @@ const AdjustStockForm: React.FC<AdjustStockFormProps> = ({ item, onSave, onCance
 
             <div className="p-4 bg-green-500/10 rounded-lg text-center border border-green-500/20">
                 <p className="text-sm text-green-700">New Total Quantity after Purchase</p>
-                <p className="text-2xl font-bold text-green-600">{item.quantity + quantityAdded} {item.unit}</p>
+                <p className="text-2xl font-bold text-green-600">{item.quantity + (Number(quantityAdded) || 0)} {item.unit}</p>
             </div>
 
 

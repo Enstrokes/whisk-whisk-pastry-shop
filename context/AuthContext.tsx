@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState } from "react";
 
 interface AuthContextType {
   token: string | null;
+  userEmail: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
 }
@@ -11,6 +12,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setToken] = useState<string | null>(
     localStorage.getItem("token")
+  );
+  const [userEmail, setUserEmail] = useState<string | null>(
+    localStorage.getItem("userEmail")
   );
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -29,9 +33,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!response.ok) return false;
 
       const data = await response.json();
-      setToken(data.access_token);
-      localStorage.setItem("token", data.access_token);
-      return true;
+  setToken(data.access_token);
+  setUserEmail(email);
+  localStorage.setItem("token", data.access_token);
+  localStorage.setItem("userEmail", email);
+  return true;
     } catch (error) {
       console.error("Login failed:", error);
       return false;
@@ -40,11 +46,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setToken(null);
+    setUserEmail(null);
     localStorage.removeItem("token");
+    localStorage.removeItem("userEmail");
   };
 
   return (
-    <AuthContext.Provider value={{ token, login, logout }}>
+  <AuthContext.Provider value={{ token, userEmail, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

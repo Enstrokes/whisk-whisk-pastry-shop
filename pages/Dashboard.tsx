@@ -26,15 +26,20 @@ const Dashboard: React.FC = () => {
         
         const [invoicesRes, stockRes, customersRes, recipesRes] = await Promise.all([
           fetchWithAuth(`${API_URL}/api/invoices`, { headers }),
-          fetchWithAuth(`${API_URL}/api/stock_items`, { headers }),
+          fetchWithAuth(`${API_URL}/api/stock_items?limit=1000`, { headers }),
           fetchWithAuth(`${API_URL}/api/customers`, { headers }),
           fetchWithAuth(`${API_URL}/api/recipes`, { headers }),
         ]);
 
-        setInvoices(await invoicesRes.json());
-        setStockItems(await stockRes.json());
-        setCustomers(await customersRes.json());
-        setRecipes(await recipesRes.json());
+
+    const invoicesData = await invoicesRes.json();
+    setInvoices(Array.isArray(invoicesData) ? invoicesData : invoicesData.results || []);
+    const stockData = await stockRes.json();
+    setStockItems(Array.isArray(stockData) ? stockData : stockData.results || []);
+    const customersData = await customersRes.json();
+    setCustomers(Array.isArray(customersData) ? customersData : customersData.results || []);
+    const recipesData = await recipesRes.json();
+    setRecipes(Array.isArray(recipesData) ? recipesData : recipesData.results || []);
 
       } catch (error) {
         console.error("Failed to fetch dashboard data:", error);
@@ -117,7 +122,7 @@ const Dashboard: React.FC = () => {
     return Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
   }, [stockItems]);
 
-  const COLORS = ['#6B46C1', '#9F7AEA', '#38B2AC'];
+  const COLORS = ['#4F2A24','#4F2A24', '#38B2AC'];
 
   if(loading) {
     return <div className="text-center p-10">Loading Dashboard...</div>;
@@ -146,7 +151,7 @@ const Dashboard: React.FC = () => {
               <YAxis stroke="#718096" tickFormatter={(value) => `₹${value}`} />
               <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '0.5rem' }} itemStyle={{ color: '#1A202C' }} labelStyle={{ color: '#718096' }} formatter={(value: number) => `₹${value.toFixed(2)}`} />
               <Legend />
-              <Bar dataKey="Sales" fill="#6B46C1" />
+              <Bar dataKey="Sales" fill="#4F2A24" />
             </BarChart>
           </ResponsiveContainer>
         </div>

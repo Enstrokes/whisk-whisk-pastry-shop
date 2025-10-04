@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import StockForm from '../components/StockForm';
 import AdjustStockForm from '../components/AdjustStockForm';
 import { EditIcon, DeleteIcon, PlusIcon, AdjustIcon } from '../components/Icons';
+import { SearchIcon } from '../components/Icons';
 import { useAuth } from '../context/AuthContext';
 
 const API_URL = 'http://127.0.0.1:8000';
@@ -40,21 +41,32 @@ const StockManagement: React.FC = () => {
   const [selectedItem, setSelectedItem] = useState<StockItem | Omit<StockItem, 'id'> | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<StockCategory | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 10;
   const { token } = useAuth();
 
   useEffect(() => {
     const fetchStock = async () => {
       try {
         setLoading(true);
-  const response = await fetchWithAuth(`${API_URL}/api/stock_items`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const skip = (page - 1) * PAGE_SIZE;
+        const params = new URLSearchParams({
+          skip: String(skip),
+          limit: String(PAGE_SIZE),
+          search: searchTerm,
+          category: categoryFilter !== 'all' ? categoryFilter : '',
+          status: statusFilter !== 'all' ? statusFilter : '',
         });
+        const url = `${API_URL}/api/stock_items?${params.toString()}`;
+        const response = await fetchWithAuth(url, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await response.json();
+        // Support both array and paginated object
+        let items = Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : [];
+        setTotal(data.total || items.length);
         // Map _id to id for frontend consistency
-        const mapped = data.map((item: any) => ({
-          ...item,
-          id: item._id || item.id,
-        }));
+        const mapped = items.map((item: any) => ({ ...item, id: item._id || item.id }));
         setStock(mapped);
       } catch (error) {
         console.error("Failed to fetch stock items:", error);
@@ -62,17 +74,12 @@ const StockManagement: React.FC = () => {
         setLoading(false);
       }
     };
-
     if (token) {
       fetchStock();
     }
-  }, [token]);
+  }, [token, page, searchTerm, categoryFilter, statusFilter]);
 
-  const filteredStock = useMemo(() => {
-    return stock
-      .filter(item => categoryFilter === 'all' || item.category === categoryFilter)
-      .filter(item => statusFilter === 'all' || getStockStatus(item) === statusFilter);
-  }, [stock, categoryFilter, statusFilter]);
+  const filteredStock = stock; // Now handled by backend
 
   const stockStatusData = useMemo(() => {
     const counts = {
@@ -193,23 +200,52 @@ const StockManagement: React.FC = () => {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-        <h1 className="text-3xl font-bold text-brand-text">Stock Management</h1>
-        <button onClick={handleOpenCreateModal} className="w-full sm:w-auto bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
-          <PlusIcon className="w-5 h-5" /> Create Item
-        </button>
-      </div>
-
-       <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as StockCategory | 'all')} className="flex-1 bg-brand-surface border border-brand-border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-brand-primary">
+      <div className="flex flex-col md:flex-row gap-4 mb-6 justify-between items-center">
+        <div className="relative w-full md:w-auto">
+          <input
+            type="text"
+            placeholder="Search by name, category..."
+            value={searchTerm}
+            onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
+            className="w-full sm:w-64 bg-brand-surface border border-brand-border rounded-lg py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          />
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-text-secondary" />
+        </div>
+        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+          <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value as StockCategory | 'all'); setPage(1); }} className="bg-brand-surface border border-brand-border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-brand-primary w-full sm:w-auto">
             <option value="all">All Categories</option>
             {Object.values(StockCategory).map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StockStatus | 'all')} className="flex-1 bg-brand-surface border border-brand-border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-brand-primary">
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value as StockStatus | 'all'); setPage(1); }} className="bg-brand-surface border border-brand-border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-brand-primary w-full sm:w-auto">
             <option value="all">All Statuses</option>
             {Object.values(StockStatus).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-       </div>
+          <button onClick={handleOpenCreateModal} className="bg-brand-primary hover:bg-brand-secondary text-white font-bold py-2 px-4 rounded-lg transition-colors w-full sm:w-auto flex items-center gap-2">
+            <PlusIcon className="w-5 h-5" /> Create Item
+          </button>
+        </div>
+      </div>
+      {/* Pagination Controls */}
+      <div className="flex justify-center items-center gap-2 mt-6 mb-2">
+        <button
+          className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50"
+          onClick={() => setPage(page - 1)}
+          disabled={page <= 1}
+        >Previous</button>
+        {Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, i) => i + 1).map(p => (
+          <button
+            key={p}
+            className={`px-3 py-1 rounded border ${p === page ? 'bg-brand-primary text-white' : 'border-gray-300'}`}
+            onClick={() => setPage(p)}
+            disabled={p === page}
+          >{p}</button>
+        ))}
+        <button
+          className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50"
+          onClick={() => setPage(page + 1)}
+          disabled={page >= Math.ceil(total / PAGE_SIZE)}
+        >Next</button>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2 bg-brand-sidebar border border-brand-border rounded-xl shadow-lg">

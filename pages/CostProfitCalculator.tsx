@@ -31,6 +31,9 @@ const CostProfitCalculator: React.FC = () => {
   const [editingRecipe, setEditingRecipe] = useState<Recipe | Omit<Recipe, 'id'> | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const { token } = useAuth();
 
   useEffect(() => {
@@ -38,20 +41,32 @@ const CostProfitCalculator: React.FC = () => {
       try {
         setLoading(true);
         const headers = { 'Authorization': `Bearer ${token}` };
+        const skip = (page - 1) * PAGE_SIZE;
+        const params = new URLSearchParams({
+          skip: String(skip),
+          limit: String(PAGE_SIZE),
+          search: searchTerm,
+        });
+        
         const [recipesRes, stockRes] = await Promise.all([
-          fetchWithAuth(`${API_URL}/api/recipes`, { headers }),
-          fetchWithAuth(`${API_URL}/api/stock_items`, { headers }),
+          fetchWithAuth(`${API_URL}/api/recipes?${params.toString()}`, { headers }),
+          fetch(`${API_URL}/api/stock_items_public?limit=1000`)
         ]);
-        const recipesData = await recipesRes.json();
+        
+        const recipesDataRaw = await recipesRes.json();
         const stockData = await stockRes.json();
         
-  // Always map _id to id for frontend consistency
-  setRecipes(recipesData.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
-        setStockItems(
-          stockData
-            .filter((item: StockItem) => item.category === StockCategory.Ingredient)
-            .map((item: any) => ({ ...item, id: item._id ? String(item._id) : item.id }))
-        );
+        const recipesArr = Array.isArray(recipesDataRaw) ? recipesDataRaw : recipesDataRaw.results || [];
+        setRecipes(recipesArr.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
+        setTotal(recipesDataRaw.total || recipesArr.length);
+        
+        // Show ALL stock items without filtering
+        const allStockItems = (stockData.results || []).map((item: any) => ({ 
+          ...item, 
+          id: item._id ? String(item._id) : item.id 
+        }));
+        
+        setStockItems(allStockItems);
         
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -59,23 +74,21 @@ const CostProfitCalculator: React.FC = () => {
         setLoading(false);
       }
     };
-
+    
     if (token) {
       fetchAllData();
     }
-  }, [token]);
+  }, [token, page, searchTerm]);
 
-  const filteredRecipes = useMemo(() => {
-    return recipes.filter(r => r.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [recipes, searchTerm]);
+  // No longer filter client-side, backend search is used
+  const filteredRecipes = recipes;
 
   useEffect(() => {
-    // This effect ensures a recipe is always selected if the list is not empty,
-    // and handles re-selection if the currently selected recipe is deleted or filtered out.
+    // Always select the first recipe if none selected or if current is not in filtered list
     if (filteredRecipes.length > 0 && (!selectedRecipe || !filteredRecipes.find(r => r.id === selectedRecipe.id))) {
-        setSelectedRecipe(filteredRecipes[0]);
+      setSelectedRecipe(filteredRecipes[0]);
     } else if (filteredRecipes.length === 0) {
-        setSelectedRecipe(null);
+      setSelectedRecipe(null);
     }
   }, [filteredRecipes, selectedRecipe]);
 
@@ -95,6 +108,87 @@ const CostProfitCalculator: React.FC = () => {
 
     return { cost, profit, margin };
   }, [selectedRecipe, stockItems]);
+
+  const handleRecalculateRecipe = async (recipe: Recipe) => {
+    if (!window.confirm('This will update the recipe cost with current stock prices. Continue?')) {
+      return;
+    }
+
+    try {
+      // Fetch latest stock data
+      const stockRes = await fetch(`${API_URL}/api/stock_items_public?limit=1000`);
+      const stockData = await stockRes.json();
+      const latestStockItems = (stockData.results || []).map((item: any) => ({ 
+        ...item, 
+        id: item._id ? String(item._id) : item.id 
+      }));
+
+      // Calculate new cost with latest prices
+      const newCost = recipe.ingredients.reduce((total, ingredient) => {
+        const stockItem = latestStockItems.find((item: any) => item.id === ingredient.stockItemId);
+        if (stockItem) {
+          return total + stockItem.costPerUnit * ingredient.quantity;
+        }
+        return total;
+      }, 0);
+
+      // Show comparison dialog
+      const currentCost = recipe.ingredients.reduce((total, ingredient) => {
+        const stockItem = stockItems.find(item => item.id === ingredient.stockItemId);
+        if (stockItem) {
+          return total + stockItem.costPerUnit * ingredient.quantity;
+        }
+        return total;
+      }, 0);
+
+      const costDifference = newCost - currentCost;
+      const costChangePercent = currentCost > 0 ? (costDifference / currentCost) * 100 : 0;
+      
+      const confirmMessage = `Cost Recalculation for "${recipe.name}":
+      
+Previous Cost: ₹${currentCost.toFixed(2)}
+New Cost: ₹${newCost.toFixed(2)}
+Difference: ${costDifference >= 0 ? '+' : ''}₹${costDifference.toFixed(2)} (${costChangePercent >= 0 ? '+' : ''}${costChangePercent.toFixed(1)}%)
+
+This is just a preview. The recipe cost will be updated in the display.
+Continue to refresh with latest prices?`;
+
+      if (window.confirm(confirmMessage)) {
+        // Update local stock items with latest data
+        setStockItems(latestStockItems);
+        alert(`Recipe "${recipe.name}" has been recalculated with latest stock prices!`);
+      }
+      
+    } catch (error) {
+      console.error('Error recalculating recipe:', error);
+      alert('Failed to recalculate recipe costs. Please try again.');
+    }
+  };
+
+  const handleRecalculateAll = async () => {
+    if (!window.confirm('This will refresh all recipe costs with current stock prices for all recipes. Continue?')) {
+      return;
+    }
+
+    try {
+      // Fetch latest stock data
+      const stockRes = await fetch(`${API_URL}/api/stock_items_public?limit=1000`);
+      const stockData = await stockRes.json();
+      const latestStockItems = (stockData.results || []).map((item: any) => ({ 
+        ...item, 
+        id: item._id ? String(item._id) : item.id 
+      }));
+
+      // Update stock items state
+      setStockItems(latestStockItems);
+      
+      alert(`All recipes have been refreshed with latest stock prices! (${latestStockItems.length} items updated)`);
+      
+    } catch (error) {
+      console.error('Error recalculating all recipes:', error);
+      alert('Failed to refresh stock prices. Please try again.');
+    }
+  };
   
   const handleOpenCreateModal = () => {
     setEditingRecipe({ ...newRecipeTemplate }); // no id for new
@@ -117,8 +211,9 @@ const CostProfitCalculator: React.FC = () => {
         // Reload recipes from backend after delete
         const headers = { 'Authorization': `Bearer ${token}` };
   const recipesRes = await fetchWithAuth(`${API_URL}/api/recipes`, { headers });
-        const recipesData = await recipesRes.json();
-        setRecipes(recipesData);
+  const recipesData = await recipesRes.json();
+  const recipesArr = Array.isArray(recipesData) ? recipesData : recipesData.results || [];
+  setRecipes(recipesArr.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
         // The useEffect will handle re-selection
       } catch (error) {
         console.error("Error deleting recipe:", error);
@@ -147,9 +242,10 @@ const CostProfitCalculator: React.FC = () => {
     // Reload recipes from backend after save, mapping _id to id
     const headers = { 'Authorization': `Bearer ${token}` };
   const recipesRes = await fetchWithAuth(`${API_URL}/api/recipes`, { headers });
-    const recipesData = await recipesRes.json();
-    setRecipes(recipesData.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
-    setSelectedRecipe({ ...savedRecipe, id: savedRecipe._id ? String(savedRecipe._id) : savedRecipe.id });
+  const recipesData = await recipesRes.json();
+  const recipesArr = Array.isArray(recipesData) ? recipesData : recipesData.results || [];
+  setRecipes(recipesArr.map((r: any) => ({ ...r, id: r._id ? String(r._id) : r.id })));
+  setSelectedRecipe({ ...savedRecipe, id: savedRecipe._id ? String(savedRecipe._id) : savedRecipe.id });
   } catch (error) {
     console.error("Error saving recipe:", error);
   } finally {
@@ -167,20 +263,50 @@ const CostProfitCalculator: React.FC = () => {
         <div className="md:col-span-1 bg-brand-sidebar border border-brand-border rounded-xl p-4 shadow-lg h-fit">
           <div className="flex justify-between items-center mb-2">
             <h2 className="font-semibold text-lg">Recipes</h2>
-            <button onClick={handleOpenCreateModal} className="bg-brand-primary hover:bg-brand-secondary text-white font-bold py-1 px-3 rounded-lg text-sm transition-colors flex items-center gap-1">
+            <div className="flex gap-2">
+              <button 
+                onClick={handleRecalculateAll} 
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-2 rounded text-xs transition-colors"
+                title="Refresh all recipes with latest stock prices"
+              >
+                ↻ Refresh Prices
+              </button>
+              <button onClick={handleOpenCreateModal} className="bg-brand-primary hover:bg-brand-secondary text-white font-bold py-1 px-3 rounded-lg text-sm transition-colors flex items-center gap-1">
                 <PlusIcon className="w-4 h-4" /> New
-            </button>
+              </button>
+            </div>
           </div>
            <div className="relative mb-4">
             <input
               type="text"
               placeholder="Search recipes..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => { setSearchTerm(e.target.value); setPage(1); }}
               className="w-full bg-brand-surface border border-brand-border rounded-lg py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-brand-primary"
             />
             <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-brand-text-secondary" />
           </div>
+          {/* Pagination Controls */}
+<div className="flex justify-center items-center gap-2 mb-2">
+  <button
+    className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50"
+    onClick={() => setPage(page - 1)}
+    disabled={page <= 1}
+  >Previous</button>
+  {Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, i) => i + 1).map(p => (
+    <button
+      key={p}
+      className={`px-3 py-1 rounded border ${p === page ? 'bg-brand-primary text-white' : 'border-gray-300'}`}
+      onClick={() => setPage(p)}
+      disabled={p === page}
+    >{p}</button>
+  ))}
+  <button
+    className="px-3 py-1 rounded border border-gray-300 disabled:opacity-50"
+    onClick={() => setPage(page + 1)}
+    disabled={page >= Math.ceil(total / PAGE_SIZE)}
+  >Next</button>
+</div>
           <ul className="space-y-1 max-h-[50vh] overflow-y-auto">
             {filteredRecipes.map(recipe => (
               <li key={recipe.id} 
@@ -192,6 +318,16 @@ const CostProfitCalculator: React.FC = () => {
                   {recipe.name}
                 </button>
                 <div className={`pr-3 flex gap-2 items-center transition-opacity duration-200 ${selectedRecipe?.id === recipe.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRecalculateRecipe(recipe);
+                      }} 
+                      className="p-1 rounded-full hover:bg-white/20"
+                      title="Recalculate with latest prices"
+                    >
+                      <span className="w-4 h-4 flex items-center justify-center text-xs">↻</span>
+                    </button>
                     <button onClick={() => handleOpenEditModal(recipe)} className="p-1 rounded-full hover:bg-white/20"><EditIcon className="w-4 h-4"/></button>
           <button onClick={() => {
             const id = recipe.id ?? recipe._id;
@@ -254,7 +390,7 @@ const CostProfitCalculator: React.FC = () => {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         title={editingRecipe && 'id' in editingRecipe ? 'Edit Recipe' : 'Create New Recipe'}
-        size="xl"
+        size="4xl"
        >
         {editingRecipe && (
             <RecipeForm 

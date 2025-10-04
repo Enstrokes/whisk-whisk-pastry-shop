@@ -7,7 +7,7 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl';
 }
 
 const sizeClasses = {
@@ -18,6 +18,8 @@ const sizeClasses = {
     '2xl': 'max-w-2xl',
     '3xl': 'max-w-3xl',
     '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
 };
 
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 'md' }) => {
@@ -36,7 +38,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 50, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className={`bg-brand-sidebar rounded-xl border border-brand-border shadow-2xl w-full ${sizeClasses[size]} flex flex-col`}
+            className={`bg-brand-sidebar rounded-xl border border-brand-border shadow-2xl w-full ${sizeClasses[size]} flex flex-col max-h-[95vh] overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
             <header className="flex items-center justify-between p-4 border-b border-brand-border">
@@ -48,7 +50,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, size = 
                 <CloseIcon className="w-5 h-5" />
               </button>
             </header>
-            <div className="p-6 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto overflow-x-visible p-6">
                 {children}
             </div>
           </motion.div>

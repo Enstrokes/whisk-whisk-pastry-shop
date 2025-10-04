@@ -327,10 +327,21 @@ def serialize_list(docs):
     return [serialize_doc(doc) for doc in docs]
 
 # Customers
-@app.get("/api/customers", response_model=List[Customer])
-async def get_customers(current_user: Annotated[User, Depends(get_current_user)]):
-    customers = await db.customers.find().to_list(100)
-    return serialize_list(customers)
+from fastapi import Query
+from fastapi.responses import JSONResponse
+
+@app.get("/api/customers")
+async def get_customers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    total = await db.customers.count_documents({})
+    customers = await db.customers.find().skip(skip).limit(limit).to_list(length=limit)
+    return JSONResponse({
+        "results": serialize_list(customers),
+        "total": total
+    })
 
 # Get a single customer by ID
 @app.get("/api/customers/{customer_id}", response_model=Customer)
@@ -344,7 +355,7 @@ async def get_customer(customer_id: str, current_user: Annotated[User, Depends(g
 # Stock Items
 
 # Create Stock Item
-from fastapi import Body
+from fastapi import Body, Query
 
 @app.post("/api/stock_items", response_model=StockItem)
 async def create_stock_item(
@@ -383,18 +394,68 @@ async def update_stock_item(
     updated = await db.stock_items.find_one({"_id": ObjectId(item_id)})
     return serialize_doc(updated)
 
-@app.get("/api/stock_items", response_model=List[StockItem])
-async def get_stock_items(current_user: Annotated[User, Depends(get_current_user)]):
-    stock_items = await db.stock_items.find().to_list(100)
-    return serialize_list(stock_items)
+
+# Paginated and searchable stock items endpoint
+# Add a public endpoint for stock items (without auth requirement)
+@app.get("/api/stock_items_public")
+async def get_stock_items_public(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1),
+    search: str = "",
+    category: str = "",
+    status: str = ""
+):
+    query = {}
+    if search:
+        query["name"] = {"$regex": search, "$options": "i"}
+    if category:
+        query["category"] = category
+    # Optionally, add status filter logic here if needed
+    total = await db.stock_items.count_documents(query)
+    cursor = db.stock_items.find(query).skip(skip).limit(limit)
+    items = await cursor.to_list(length=limit)
+    return {"results": serialize_list(items), "total": total}
+
+
+@app.get("/api/stock_items")
+async def get_stock_items(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1),
+    search: str = "",
+    category: str = "",
+    status: str = "",
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    query = {}
+    if search:
+        query["name"] = {"$regex": search, "$options": "i"}
+    if category:
+        query["category"] = category
+    # Optionally, add status filter logic here if needed
+    total = await db.stock_items.count_documents(query)
+    cursor = db.stock_items.find(query).skip(skip).limit(limit)
+    items = await cursor.to_list(length=limit)
+    return {"results": serialize_list(items), "total": total}
 
 
 
 # Recipes CRUD
-@app.get("/api/recipes", response_model=List[Recipe])
-async def get_recipes(current_user: Annotated[User, Depends(get_current_user)]):
-    recipes = await db.recipes.find().to_list(100)
-    return serialize_list(recipes)
+
+# Paginated and searchable recipes endpoint
+@app.get("/api/recipes")
+async def get_recipes(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1),
+    search: str = "",
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    query = {}
+    if search:
+        query["name"] = {"$regex": search, "$options": "i"}
+    total = await db.recipes.count_documents(query)
+    cursor = db.recipes.find(query).skip(skip).limit(limit)
+    items = await cursor.to_list(length=limit)
+    return {"results": serialize_list(items), "total": total}
 
 @app.post("/api/recipes", response_model=Recipe)
 async def create_recipe(
@@ -440,10 +501,21 @@ async def delete_recipe(
 
 
 # Invoices
-@app.get("/api/invoices", response_model=List[Invoice])
-async def get_invoices(current_user: Annotated[User, Depends(get_current_user)]):
-    invoices = await db.invoices.find().to_list(100)
-    return serialize_list(invoices)
+from fastapi import Query
+from fastapi.responses import JSONResponse
+
+@app.get("/api/invoices")
+async def get_invoices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    current_user: Annotated[User, Depends(get_current_user)] = None
+):
+    total = await db.invoices.count_documents({})
+    invoices = await db.invoices.find().sort("date", -1).skip(skip).limit(limit).to_list(length=limit)
+    return JSONResponse({
+        "results": serialize_list(invoices),
+        "total": total
+    })
 
 
 # --- INVOICE CREATION ENDPOINT ---
